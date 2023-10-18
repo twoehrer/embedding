@@ -617,6 +617,22 @@ def create_dataloader(data_type, data_size = 3000, noise = 0.15, factor = 0.15, 
         # y = y.to(torch.int64)
         X += noise * torch.randn(X.shape)
         
+    elif data_type == 'circles_buffer':
+        X_pre = torch.empty((data_size, 2))
+        
+        #uniform distribution on intervall [-2,2] but data is standard transformed later on
+        X_pre[:, 0] = torch.rand(data_size) * 4 - 2
+        X_pre[:, 1] = torch.rand(data_size) * 4 - 2
+
+        #exclude data points in buffer zone
+        norms = torch.norm(X_pre, dim=1)
+        condition = torch.logical_or(norms < (1 - factor), norms > (1 + factor))
+        X = X_pre[condition, :]
+
+        #asign labels for inner and outer area
+        norms = norms[condition]
+        y = (norms < 1 - factor).float()
+        
         
     else: 
         print('datatype not supported')
