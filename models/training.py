@@ -621,8 +621,8 @@ def create_dataloader(data_type, data_size = 3000, noise = 0.15, factor = 0.15, 
         X_pre = torch.empty((data_size, 2))
         
         #uniform distribution on intervall [-2,2] but data is standard transformed later on
-        X_pre[:, 0] = torch.rand(data_size) * 4 - 2
-        X_pre[:, 1] = torch.rand(data_size) * 4 - 2
+        X_pre[:, 0] = torch.rand(data_size) * 3 - 1.5
+        X_pre[:, 1] = torch.rand(data_size) * 3 - 1.5
 
         #exclude data points in buffer zone
         norms = torch.norm(X_pre, dim=1)
@@ -644,7 +644,8 @@ def create_dataloader(data_type, data_size = 3000, noise = 0.15, factor = 0.15, 
     g = torch.Generator()
     g.manual_seed(random_state)
     
-    X = StandardScaler().fit_transform(X)
+    if data_type != 'circles_buffer':
+        X = StandardScaler().fit_transform(X)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=.2, random_state=random_state, shuffle = shuffle)
 
     X_train = torch.Tensor(X_train) # transform to torch tensor for dataloader
