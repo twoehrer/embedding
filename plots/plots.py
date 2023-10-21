@@ -160,8 +160,10 @@ def classification_levelsets(model, fig_name=None, footnote=None, contour = True
         plt.savefig(fig_name + '.png', bbox_inches='tight', dpi=300, format='png', facecolor = 'white')
         plt.clf()
         plt.close()
-    else: plt.show()
-        
+    # else: plt.show()
+    else:
+        return fig, ax
+    
 def loss_evolution(trainer, epoch, filename = '', figsize = None, footnote = None):
     print(f'{epoch = }')
     fig = plt.figure(dpi = 100, figsize=(figsize))
