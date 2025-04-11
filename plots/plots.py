@@ -81,7 +81,7 @@ def visualize_classification(model, data, label, grad = None, fig_name=None, foo
 
     # labels_predicted = [0 if value <= 0.5 else 1 for value in labels_predicted.numpy()]
     if contour:
-        colors = [to_rgb("C1"), [1, 1, 1], to_rgb("C0")] # first color is black, last is red
+        colors = [to_rgb("C1"), [1, 1, 1], to_rgb("C0")]
         cm = LinearSegmentedColormap.from_list(
             "Custom", colors, N=40)
         z = np.array(preds).reshape(xx1.shape)
@@ -102,7 +102,7 @@ def visualize_classification(model, data, label, grad = None, fig_name=None, foo
 
 
 @torch.no_grad()
-def classification_levelsets(model, fig_name=None, footnote=None, contour = True, plotlim = [-2, 2]):
+def classification_levelsets(model, fig_name=None, footnote=None, contour = True, amount_levels = 8, plotlim = [-2, 2]):
     
     
     x1lower, x1upper = plotlim
@@ -149,7 +149,7 @@ def classification_levelsets(model, fig_name=None, footnote=None, contour = True
             "Custom", colors, N=40)
         z = np.array(preds).reshape(xx1.shape)
         
-        levels = np.linspace(0.,1.,8).tolist()
+        levels = np.linspace(0.,1.,amount_levels).tolist()
         
         cont = plt.contourf(xx1, xx2, z, levels, alpha=1, cmap=cm, zorder = 0, extent=(x1lower, x1upper, x2lower, x2upper)) #plt.get_cmap('coolwarm')
         cbar = fig.colorbar(cont, fraction=0.046, pad=0.04)
