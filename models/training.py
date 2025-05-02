@@ -698,3 +698,113 @@ def create_dataloader(data_type, data_size = 3000, noise = 0.15, factor = 0.15, 
     plt.show()
     
     return train, test
+
+def make_circles_uniform(output_dim, n_samples = 2000, inner_radius = 0.5, buffer = 0.2, outer_radius = 1.0, cross_entropy = False, plot = True, batch_size = 128, filename = None):
+    """Generates a dataset of points in a ring and inside the ring.
+    Args:   
+        n_samples (int): Total number of samples to generate.
+        inner_radius (float): Radius of the inner RING line.
+        outer_radius (float): Radius of the outer RING line.
+        buffer (float): Buffer between ring and circle.
+        cross_entropy (bool): If True, use cross-entropy loss. If False, use MSE loss.
+        output_dim (int): Dimension of the output labels. MSE allows 2d
+    """
+    # Generate training data
+    # set random seed for reproducibility
+    seed = np.random.randint(1000)
+    print(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    
+    # Generate outer ring points
+    n_points = n_samples // 2
+    inner_radius = inner_radius #of outer ring
+    outer_radius = outer_radius #of outer ring
+
+    # Buffer between inner and outer ring
+    buffer = buffer
+
+    # Points on ring
+    angles_ring = np.random.uniform(0, 2 * np.pi, n_points)
+    radius_ring = np.random.uniform(inner_radius, outer_radius, n_points)
+    x_ring = radius_ring * np.cos(angles_ring)
+    y_ring = radius_ring * np.sin(angles_ring)
+    ring_points = np.stack((x_ring, y_ring), axis=1)
+
+    # Points inside ring
+    angles_inside = np.random.uniform(0, 2 * np.pi, n_points)
+    radius_inside = inner_radius * np.sqrt(np.random.uniform(0, 1, n_points))
+    x_inside = (radius_inside-buffer) * np.cos(angles_inside)
+    y_inside = (radius_inside-buffer) * np.sin(angles_inside)
+    inside_points = np.stack((x_inside, y_inside), axis=1)
+
+    # Labels
+    if cross_entropy:
+        labels_ring = np.ones((n_points), dtype=np.int64)
+        labels_inside = np.zeros((n_points), dtype=np.int64)    
+    else:
+        if output_dim == 2:
+            labels_ring = np.tile([1, 0], (n_points, 1))
+            labels_inside = np.tile([-1, 0], (n_points, 1))
+        if output_dim == 1:
+            labels_ring = np.ones((n_points, 1))
+            labels_inside = -np.ones((n_points, 1))
+
+    # Combine data
+    data = np.vstack((ring_points, inside_points))
+    labels = np.vstack((labels_ring, labels_inside))
+
+    # Convert to tensors
+    data_tensor = torch.tensor(data, dtype=torch.float32)
+
+    if cross_entropy:
+        labels = np.concatenate((labels_ring, labels_inside))
+        labels_tensor = torch.tensor(labels, dtype=torch.long)
+        print(labels_tensor[:1])
+    else:
+        labels = np.vstack((labels_ring, labels_inside))
+        labels_tensor = torch.tensor(labels, dtype=torch.float32)
+    
+    if plot:
+        # Plot the data
+        plt.figure(figsize=(8, 8))
+        plt.scatter(ring_points[:, 0], ring_points[:, 1], s=20, c='C1', alpha = 0.5, label='Ring Points')
+        plt.scatter(inside_points[:, 0], inside_points[:, 1], s=20, c='C0', alpha = 0.5, label='Inside Points')
+        plt.xlabel('X')
+        plt.ylabel('Y')
+        # plt.legend()
+        plt.title('Training Dataset: Ring and Inside Points')
+        plt.axis('equal')
+        plt.grid(True)
+        
+                # Save plot if filename provided
+        if filename is not None:
+            plt.savefig(f'{filename}.png', bbox_inches='tight', dpi=300)
+            print(f'Plot saved as {filename}.png')
+        
+        plt.show()
+    
+    # Create DataLoader
+    X_train, X_test, y_train, y_test = train_test_split(data, labels, test_size=0.3, random_state=seed)
+
+    X_train = torch.tensor(X_train, dtype=torch.float32)
+    X_test = torch.tensor(X_test, dtype=torch.float32)
+    
+    if output_dim == 1:
+        y_train = torch.tensor(y_train.reshape(-1, 1), dtype=torch.float32)
+        y_test = torch.tensor(y_test.reshape(-1, 1), dtype=torch.float32)
+    else:
+        y_train = torch.tensor(y_train, dtype=torch.float32)  # Don't reshape for 2D outputs
+        y_test = torch.tensor(y_test, dtype=torch.float32)
+
+    # Create DataLoader for training data
+    train_dataset = TensorDataset(X_train, y_train)
+    test_dataset = TensorDataset(X_test, y_test)
+
+    # Create DataLoader for training data
+    train_dataset = TensorDataset(X_train, y_train)
+    test_dataset = TensorDataset(X_test, y_test)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_dataloader = DataLoader(test_dataset, batch_size=n_samples, shuffle=False)
+        
+    return train_dataloader, test_dataloader
