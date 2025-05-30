@@ -19,41 +19,54 @@ from matplotlib.colors import LinearSegmentedColormap
 import os
 
 #this is the new function more distilled from the old one
-@torch.no_grad()
-def plot_decision_boundary(model, X, y, title="Decision Boundary", amount_levels = 50, margin = 0.2):
-    
-    colors = [to_rgb("C0"), [1, 1, 1], to_rgb("C1")] # first color is orange, last is blue
-    cm = LinearSegmentedColormap.from_list(
-                "Custom", colors, N=40)
-    
+
+def plot_decision_boundary(model, X, y, title="Prediction Level Sets", amount_levels=50, margin=0.2, ax=None, show=True, colorbar = True, file_name = None, footnote = None):
+    from matplotlib.colors import LinearSegmentedColormap, to_rgb
+
+    colors = [to_rgb("C0"), [1, 1, 1], to_rgb("C1")]
+    cm = LinearSegmentedColormap.from_list("Custom", colors, N=amount_levels)
+
     model.eval()
-   
     x_min, x_max = X[:, 0].min() - margin, X[:, 0].max() + margin
     y_min, y_max = X[:, 1].min() - margin, X[:, 1].max() + margin
-    xx, yy = np.meshgrid(np.linspace(x_min, x_max, 200),
-                         np.linspace(y_min, y_max, 200))
+    xx, yy = np.meshgrid(np.linspace(x_min, x_max, 200), np.linspace(y_min, y_max, 200))
     grid = np.c_[xx.ravel(), yy.ravel()]
     grid_tensor = torch.tensor(grid, dtype=torch.float32)
-    
+
     with torch.no_grad():
         preds = model(grid_tensor).numpy().reshape(xx.shape)
 
-    plt.figure(figsize=(10, 8))
-    levels = np.linspace(0.,1.,amount_levels).tolist()
-    plt.contourf(xx, yy, preds, levels = levels, cmap=cm, alpha=0.8)
-    # plt.scatter(X[:, 0], X[:, 1], c=y.squeeze(), cmap='bwr', edgecolors='k')
-    plt.colorbar(label='Prediction Probability')
-    plt.xlabel('X')
-    plt.ylabel('Y')
-    plt.scatter(X[:, 0], X[:, 1], s=25, c = y.squeeze(), cmap = cm, edgecolors='black', linewidths=0.5, alpha=0.9)
-    # plt.scatter(inside_points[:500, 0], inside_points[:500, 1], s=25, c='C0',  edgecolors='black', linewidths=0.5, alpha=0.5,  label='Inside Points')
-    plt.title(title)
-    # plt.axis('equal')
-    plt.grid(False)
-    plt.xlim(-1, 1)
-    plt.ylim(-1, 1)
-    plt.axis('tight')
-    plt.show()
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(6, 5))
+
+    levels = np.linspace(0., 1., amount_levels).tolist()
+    contour = ax.contourf(xx, yy, preds, 
+                          levels=levels, 
+                          cmap=cm, alpha=0.8)
+    scatter = ax.scatter(X[:, 0], X[:, 1], s=25, c=y.squeeze(), cmap=cm, edgecolors='black', linewidths=0.5, alpha=0.9)
+
+    ax.set_title(title)
+    ax.set_xlabel('$x_1$')
+    ax.set_ylabel('$x_2$')
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    ax.axis('tight')
+    ax.grid(False)
+    if colorbar:
+        colorbar_ticks = np.linspace(0, 1, 10)
+        cb = plt.colorbar(contour, ax=ax, label='Prediction Probability', ticks=colorbar_ticks)
+        cb.set_ticklabels([f"{tick:.2f}" for tick in colorbar_ticks])
+    
+    plt.figtext(0.5, 0, footnote, ha="center", fontsize=8)
+    
+    if file_name is not None:
+        file_name = file_name + '.png'
+        plt.savefig(file_name, bbox_inches='tight', dpi=300, facecolor = 'white')
+        print(f"Plot saved to {file_name}")
+    if show and ax is None:
+        plt.show()
+        
+
 
 @torch.no_grad()
 def visualize_classification(model, data, label, grad = None, fig_name=None, footnote=None, contour = True, x1lims = [-2, 2], x2lims = [-2, 2]):

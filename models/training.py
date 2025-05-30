@@ -702,7 +702,7 @@ def create_dataloader(data_type, data_size = 3000, noise = 0.15, factor = 0.15, 
     
     return train, test
 
-def make_circles_uniform(output_dim, n_samples = 2000, inner_radius = 0.5, buffer = 0.2, outer_radius = 1.0, cross_entropy = False, plot = True, batch_size = 128, filename = None):
+def make_circles_uniform(output_dim, n_samples = 2000, inner_radius = 0.5, buffer = 0.2, outer_radius = 1.0, cross_entropy = False, plot = True, batch_size = 128, filename = None, seed = None):
     """Generates a dataset of points in a ring and inside the ring.
     Args:   
         n_samples (int): Total number of samples to generate.
@@ -714,10 +714,12 @@ def make_circles_uniform(output_dim, n_samples = 2000, inner_radius = 0.5, buffe
     """
     # Generate training data
     # set random seed for reproducibility
-    seed = np.random.randint(1000)
-    print(seed)
+    if seed is None:
+        seed = np.random.randint(1000)
+
     np.random.seed(seed)
     torch.manual_seed(seed)
+    print(seed)
     
     # Generate outer ring points
     n_points = n_samples // 2
@@ -733,7 +735,9 @@ def make_circles_uniform(output_dim, n_samples = 2000, inner_radius = 0.5, buffe
 
     # Points on ring
     angles_ring = np.random.uniform(0, 2 * np.pi, n_points)
-    radius_ring = np.random.uniform(inner_radius, outer_radius, n_points) #this needs to be modified to this one. but there is some typo at the moment np.sqrt(outer_radius ** 2 - inner_radius**2 ) * np.sqrt(np.random.uniform(0, 1, n_points) + inner_radius** 2 *(outer_radius**2 - inner_radius**2))
+    radius_ring = np.sqrt(outer_radius ** 2 - inner_radius**2 ) * np.sqrt( np.random.uniform(0, 1, n_points) + inner_radius** 2 /(outer_radius**2 - inner_radius**2) ) 
+    # radius_ring = np.random.uniform(inner_radius, outer_radius, n_points) #this needs to be modified to this one. but there is some typo at the moment
+    
     x_ring = radius_ring * np.cos(angles_ring)
     y_ring = radius_ring * np.sin(angles_ring)
     ring_points = np.stack((x_ring, y_ring), axis=1)
@@ -752,9 +756,10 @@ def make_circles_uniform(output_dim, n_samples = 2000, inner_radius = 0.5, buffe
         if output_dim == 2:
             labels_ring = np.tile([1, 0], (n_points, 1))
             labels_inside = np.tile([-1, 0], (n_points, 1))
-        if output_dim == 1:
+        elif output_dim == 1:
             labels_ring = np.ones((n_points, 1))
             labels_inside = -np.ones((n_points, 1))
+            print(labels_ring)
 
     # Combine data
     data = np.vstack((ring_points, inside_points))
@@ -765,30 +770,37 @@ def make_circles_uniform(output_dim, n_samples = 2000, inner_radius = 0.5, buffe
 
     if cross_entropy:
         labels = np.concatenate((labels_ring, labels_inside))
-        labels_tensor = torch.tensor(labels, dtype=torch.long)
-        print(labels_tensor[:1])
     else:
         labels = np.vstack((labels_ring, labels_inside))
-        labels_tensor = torch.tensor(labels, dtype=torch.float32)
     
     
     
     # Create DataLoader
     X_train, X_test, y_train, y_test = train_test_split(data, labels, test_size=0.3, random_state=seed)
     
+    if output_dim == 1:
+        y_train = y_train.squeeze()
+        y_test = y_test.squeeze()
+    
     if plot:
         # Plot the data
-        ring_X_train = X_train[y_train == 1]
-        ring_y_train = y_train[y_train == 1]
         
-        inside_X_train = X_train[y_train == 0]
-        inside_y_train = y_train[y_train == 0]
+        if cross_entropy:
+            ring_X_train = X_train[y_train == 1]
+            inside_X_train = X_train[y_train == 0]
+        else:
+            if output_dim == 1:
+                ring_X_train = X_train[y_train > 0]
+                inside_X_train = X_train[y_train < 0]
+            elif output_dim == 2:
+                ring_X_train = X_train[y_train[:,0] > 0]
+                inside_X_train = X_train[y_train[:,0] < 0]
         
         plt.figure(figsize=(8, 8))
-        plt.scatter(ring_points[:, 0], ring_points[:, 1], s=20, c='C1', alpha = 0.5, label='Ring Points')
-        plt.scatter(inside_points[:, 0], inside_points[:, 1], s=20, c='C0', alpha = 0.5, label='Inside Points')
-        plt.xlabel('X')
-        plt.ylabel('Y')
+        plt.scatter(ring_X_train[:, 0], ring_X_train[:, 1], s=20, c='C1', alpha = 0.5, label='Ring Points')
+        plt.scatter(inside_X_train[:, 0], inside_X_train[:, 1], s=20, c='C0', alpha = 0.5, label='Inside Points')
+        plt.xlabel('$x_1$')
+        plt.ylabel('$x_2$')
         # plt.legend()
         plt.title('Training Dataset: Ring and Inside Points')
         plt.axis('equal')
