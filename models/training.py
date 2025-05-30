@@ -646,6 +646,7 @@ def create_dataloader(data_type, data_size = 3000, noise = 0.15, factor = 0.15, 
     
     if data_type != 'circles_buffer':
         X = StandardScaler().fit_transform(X)
+    
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=.2, random_state=random_state, shuffle = shuffle)
 
     X_train = torch.Tensor(X_train) # transform to torch tensor for dataloader
@@ -661,6 +662,8 @@ def create_dataloader(data_type, data_size = 3000, noise = 0.15, factor = 0.15, 
 
         X_test = X_test.type(torch.float32)  #type of orginial pickle.load data
         y_test = y_test.type(torch.int64) #dtype of original picle.load data
+        
+        
         
     else:
         X_train = X_train.type(torch.float32)  #type of orginial pickle.load data
@@ -724,18 +727,21 @@ def make_circles_uniform(output_dim, n_samples = 2000, inner_radius = 0.5, buffe
     # Buffer between inner and outer ring
     buffer = buffer
 
+    # Points around origin
+    angles_inside = np.random.uniform(0, 2 * np.pi, n_points)
+    radii_inside = (inner_radius - buffer) * np.sqrt(np.random.uniform(0, 1, n_points)) # the squareroot is to ensure uniform distribution on the disc. The larger the radius, the more points for equal distance in  x and y direction. Proof: We want a constant density in x and y direction on a disc of radius R. Then transform to polar coodinates and integrate to get the distribution function in dependence of the variable radius r as well as R.
+
     # Points on ring
     angles_ring = np.random.uniform(0, 2 * np.pi, n_points)
-    radius_ring = np.random.uniform(inner_radius, outer_radius, n_points)
+    radius_ring = np.random.uniform(inner_radius, outer_radius, n_points) #this needs to be modified to this one. but there is some typo at the moment np.sqrt(outer_radius ** 2 - inner_radius**2 ) * np.sqrt(np.random.uniform(0, 1, n_points) + inner_radius** 2 *(outer_radius**2 - inner_radius**2))
     x_ring = radius_ring * np.cos(angles_ring)
     y_ring = radius_ring * np.sin(angles_ring)
     ring_points = np.stack((x_ring, y_ring), axis=1)
 
-    # Points inside ring
-    angles_inside = np.random.uniform(0, 2 * np.pi, n_points)
-    radius_inside = inner_radius * np.sqrt(np.random.uniform(0, 1, n_points))
-    x_inside = (radius_inside-buffer) * np.cos(angles_inside)
-    y_inside = (radius_inside-buffer) * np.sin(angles_inside)
+
+    
+    x_inside = radii_inside * np.cos(angles_inside)
+    y_inside = radii_inside * np.sin(angles_inside)
     inside_points = np.stack((x_inside, y_inside), axis=1)
 
     # Labels
@@ -765,8 +771,19 @@ def make_circles_uniform(output_dim, n_samples = 2000, inner_radius = 0.5, buffe
         labels = np.vstack((labels_ring, labels_inside))
         labels_tensor = torch.tensor(labels, dtype=torch.float32)
     
+    
+    
+    # Create DataLoader
+    X_train, X_test, y_train, y_test = train_test_split(data, labels, test_size=0.3, random_state=seed)
+    
     if plot:
         # Plot the data
+        ring_X_train = X_train[y_train == 1]
+        ring_y_train = y_train[y_train == 1]
+        
+        inside_X_train = X_train[y_train == 0]
+        inside_y_train = y_train[y_train == 0]
+        
         plt.figure(figsize=(8, 8))
         plt.scatter(ring_points[:, 0], ring_points[:, 1], s=20, c='C1', alpha = 0.5, label='Ring Points')
         plt.scatter(inside_points[:, 0], inside_points[:, 1], s=20, c='C0', alpha = 0.5, label='Inside Points')
@@ -783,9 +800,6 @@ def make_circles_uniform(output_dim, n_samples = 2000, inner_radius = 0.5, buffe
             print(f'Plot saved as {filename}.png')
         
         plt.show()
-    
-    # Create DataLoader
-    X_train, X_test, y_train, y_test = train_test_split(data, labels, test_size=0.3, random_state=seed)
 
     X_train = torch.tensor(X_train, dtype=torch.float32)
     X_test = torch.tensor(X_test, dtype=torch.float32)
