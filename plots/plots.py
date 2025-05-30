@@ -53,7 +53,7 @@ def plot_decision_boundary(model, X, y, title="Prediction Level Sets", amount_le
     ax.axis('tight')
     ax.grid(False)
     if colorbar:
-        colorbar_ticks = np.linspace(0, 1, 10)
+        colorbar_ticks = np.linspace(0, 1, 9)
         cb = plt.colorbar(contour, ax=ax, label='Prediction Probability', ticks=colorbar_ticks)
         cb.set_ticklabels([f"{tick:.2f}" for tick in colorbar_ticks])
     

@@ -759,7 +759,6 @@ def make_circles_uniform(output_dim, n_samples = 2000, inner_radius = 0.5, buffe
         elif output_dim == 1:
             labels_ring = np.ones((n_points, 1))
             labels_inside = -np.ones((n_points, 1))
-            print(labels_ring)
 
     # Combine data
     data = np.vstack((ring_points, inside_points))
