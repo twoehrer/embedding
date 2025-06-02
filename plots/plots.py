@@ -20,7 +20,52 @@ import os
 
 #this is the new function more distilled from the old one
 
-def plot_decision_boundary(model, X, y, title="Prediction Level Sets", amount_levels=50, margin=0.2, ax=None, show=True, colorbar = True, file_name = None, footnote = None):
+def plot_level_sets(model, title="Prediction Level Sets", amount_levels=50, x_min = -1, x_max = 1, y_min = -1, y_max = 1, ax=None, show=True, file_name = None, footnote = None):
+    from matplotlib.colors import LinearSegmentedColormap, to_rgb
+
+    
+    model.eval()
+    xx, yy = np.meshgrid(np.linspace(x_min, x_max, 200), np.linspace(y_min, y_max, 200))
+    grid = np.c_[xx.ravel(), yy.ravel()]
+    grid_tensor = torch.tensor(grid, dtype=torch.float32)
+
+    with torch.no_grad():
+        preds = model(grid_tensor).numpy().reshape(xx.shape)
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(6, 5))
+
+    levels = np.linspace(0., 1., amount_levels).tolist()
+    contour = ax.contour(xx, yy, preds, 
+                          levels=levels, 
+                          colors = 'k', linewidths = 0.3, alpha=1)
+    
+    
+    
+    ax.set_title(title)
+    ax.set_xlabel('$x_1$')
+    ax.set_ylabel('$x_2$')
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    ax.set_xticks([-1.0, -0.5, 0.0, 0.5, 1.0])
+    ax.set_yticks([-1.0, -0.5, 0.0, 0.5, 1.0])
+    ax.axis('tight')
+    ax.grid(False)
+
+    colorbar_ticks = np.linspace(0, 1, 9)
+    cb = plt.colorbar(contour, ax=ax, label='Prediction Probability', ticks=colorbar_ticks)
+    cb.set_ticklabels([f"{tick:.2f}" for tick in colorbar_ticks])
+    
+    plt.figtext(0.5, 0, footnote, ha="center", fontsize=8)
+    
+    if file_name is not None:
+        file_name = file_name + '.png'
+        plt.savefig(file_name, bbox_inches='tight', dpi=300, facecolor = 'white')
+        print(f"Plot saved to {file_name}")
+    if show and ax is None:
+        plt.show()
+
+def plot_decision_boundary(model, X, y, title="Prediction Level Sets", amount_levels=50, margin=0.2, ax=None, show=True, colorbar = True, file_name = None, show_points = True, footnote = None):
     from matplotlib.colors import LinearSegmentedColormap, to_rgb
 
     colors = [to_rgb("C0"), [1, 1, 1], to_rgb("C1")]
@@ -43,13 +88,18 @@ def plot_decision_boundary(model, X, y, title="Prediction Level Sets", amount_le
     contour = ax.contourf(xx, yy, preds, 
                           levels=levels, 
                           cmap=cm, alpha=0.8)
-    scatter = ax.scatter(X[:, 0], X[:, 1], s=25, c=y.squeeze(), cmap=cm, edgecolors='black', linewidths=0.5, alpha=0.9)
+    
+    
+    
+    if show_points == True:
+        scatter = ax.scatter(X[:, 0], X[:, 1], s=25, c=y.squeeze(), cmap=cm, edgecolors='black', linewidths=0.5, alpha=0.9)
 
     ax.set_title(title)
     ax.set_xlabel('$x_1$')
     ax.set_ylabel('$x_2$')
     ax.set_xlim(-1, 1)
     ax.set_ylim(-1, 1)
+ 
     ax.axis('tight')
     ax.grid(False)
     if colorbar:

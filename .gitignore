@@ -1,7 +1,10 @@
 *.gif
 *.pdf
 *.png
+*.pth
 img_results*/
+
+/archive
 
 __pycache__/
 *.py[cod]
