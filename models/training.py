@@ -23,6 +23,194 @@ from torch.utils.data import DataLoader, TensorDataset
 
 
 
+
+def compute_accuracy(y_pred, y_true):
+    """
+    computes accuracy of predictions against ground truth labels.
+    only works for 1-dim output currently
+    y_pred: float32 predictions (sigmoid outputs)
+    y_true: float32 ground truth labels (0 or 1)
+    """
+    y_pred_binary = (y_pred >= 0.5).int()
+    y_true_binary = y_true.int()
+    correct = (y_pred_binary == y_true_binary).sum().item()
+    total = y_true.shape[0]
+    return correct / total
+
+import copy
+
+def train_model(model, train_loader, test_loader,
+                                load_file = None, epochs=300, lr=0.01, patience=300, cross_entropy=True, seed = None):
+    """
+    Trains the model on the provided training data and evaluates it on the test data.
+    patience is the number of epochs to wait for improvement before stopping training.
+    If load_file is provided, it will load the model state from the specified file instead of training.
+    Returns the trained model, best accuracy, and training losses.
+    """
+    if load_file is None:  # Only enter retry loop if no model is being loaded
+    
+        model.train()
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        if cross_entropy:
+            criterion = nn.BCELoss()
+        else: criterion = nn.MSELoss()
+
+        best_acc = 0
+        patience_counter = 0
+        losses = []
+
+
+
+        for epoch in range(epochs):
+            epoch_loss = 0
+            for batch_X, batch_y in train_loader:
+                y_pred = model(batch_X)
+                loss = criterion(y_pred, batch_y)
+                epoch_loss += loss.item()
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+            losses.append(epoch_loss / len(train_loader))
+
+            # Evaluate on test data
+            model.eval()
+            with torch.no_grad():
+                acc_summed = 0.
+                counter = 0
+                for X_test, y_test in test_loader:
+                    counter += 1
+                    test_preds = model(X_test)
+                    acc_summed += compute_accuracy(test_preds, y_test)
+                acc = acc_summed / counter
+            model.train()
+
+            if acc > best_acc:
+                best_acc = acc
+                best_model_state = copy.deepcopy(model.state_dict())
+                patience_counter = 0
+            else:
+                patience_counter += 1
+                if patience_counter >= patience:
+                    print(f"⏹️ Early stopping at epoch {epoch}, best acc: {best_acc:.3f}")
+                    break
+
+            # At end, load the best model
+        if patience_counter > 0:
+            model.load_state_dict(best_model_state)
+            
+        # --- Save Checkpoint ---
+        checkpoint = {
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(), # Good practice to save optimizer state too
+        'losses': losses,
+        'seed': seed,
+        'epoch': epoch, # Save the last epoch number
+        'input_dim': model.input_dim, # Save hyperparameters for verification/reproducibility
+        'hidden_dim': model.hidden_dim,
+        'output_dim': model.output_dim,
+        'num_blocks': model.num_hidden,
+        'cross_entropy': cross_entropy,
+        'accuracy': best_acc,
+        'activation': model.activation
+        }
+        save_path = f'last.pth'
+        torch.save(checkpoint, save_path)
+        print(f'Checkpoint saved to {save_path}')
+        # We have the losses from training directly
+
+        return model, best_acc, losses  # <--- return the best model!
+    
+    
+    else: # If loading a model, skip training and just load the model state
+        
+        load_path = load_file + '.pth'
+    try:
+        print(f"--- Loading Checkpoint from: {load_path} ---")
+        checkpoint = torch.load(load_path)
+
+        # Load model state
+        model.load_state_dict(checkpoint['model_state_dict'])
+
+        # Load losses and seed from the checkpoint
+        losses = checkpoint.get('losses', []) # Use .get for backward compatibility if 'losses' key is missing
+        loaded_seed = checkpoint.get('seed', 'Not Found') # Use .get for backward compatibility
+
+        # Optionally load optimizer state if you plan to resume training
+        # optimizer = torch.optim.Adam(model.parameters()) # Re-initialize optimizer
+        # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        # start_epoch = checkpoint['epoch'] + 1 # To resume training
+
+        # Load other saved info (optional, but good for verification)
+        loaded_input_dim = checkpoint.get('input_dim', 'Not Found')
+        loaded_hidden_dim = checkpoint.get('hidden_dim', 'Not Found')
+        loaded_output_dim = checkpoint.get('output_dim', 'Not Found')
+        loaded_num_blocks = checkpoint.get('num_blocks', 'Not Found')
+        loaded_cross_entropy = checkpoint.get('cross_entropy', 'Not Found')
+        last_epoch = checkpoint.get('epoch', 'Not Found')
+        best_acc = checkpoint.get('accuracy', 0.0)  # Load the best accuracy
+        activation = checkpoint.get('activation', 'Not Found')
+    
+
+
+        print(f"Model state loaded successfully.")
+        print(f"Loaded training losses (Length: {len(losses)}).")
+        print(f"Original training seed: {loaded_seed}")
+        print(f"Model trained for {last_epoch + 1 if isinstance(last_epoch, int) else 'N/A'} epochs.")
+        print(f"Saved Hyperparameters: Input={loaded_input_dim}, Hidden={loaded_hidden_dim}, Output={loaded_output_dim}, Blocks={loaded_num_blocks}, CrossEntropy={loaded_cross_entropy}")
+
+
+        model.eval() # Set model to evaluation mode after loading
+        print("Model set to evaluation mode.")
+        
+        return model, best_acc, losses
+
+    except FileNotFoundError:
+        print(f"Error: Checkpoint file not found at {load_path}")
+        losses = [] # Ensure losses is an empty list if loading failed
+
+
+def train_until_threshold(model_class, train_loader, test_loader, 
+                          load_file = None, cross_entropy=True,max_retries=10, threshold=0.95, seed = None, **model_kwargs):
+    if load_file is None:
+        for attempt in range(1, max_retries + 1):
+            seed = np.random.randint(1000)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            model = model_class(**model_kwargs)
+            model, acc, losses = train_model(model, train_loader, test_loader, cross_entropy=cross_entropy)
+            print(f"[Attempt {attempt}] Accuracy: {acc:.3f}")
+            if acc >= threshold:
+                print(f"✅ Success after {attempt} attempt(s)!")
+                return model, acc, losses
+        print("❌ Failed to reach threshold.")
+        return model, acc, losses
+    else:
+        print("Loading model, skipping training.")
+        model = model_class(**model_kwargs)
+        model, acc, losses = train_model(model, train_loader, test_loader, load_file=load_file, cross_entropy=cross_entropy, seed = seed)
+        return model, acc, losses
+
+
+def plot_loss_curve(losses, title="Training Loss", filename = None):
+    plt.figure(figsize=(6, 4))
+    plt.plot(losses, label="Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Binary Cross Entropy Loss")
+    plt.title(title)
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    if filename is not None:
+        plt.savefig(filename + '.png', dpi=300, bbox_inches='tight', facecolor='white')
+    plt.show()
+
+
+
+
+########################
+
 losses = {'mse': nn.MSELoss(), 
           'cross_entropy': nn.CrossEntropyLoss(), 
           'ell1': nn.SmoothL1Loss()
