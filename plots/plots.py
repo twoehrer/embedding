@@ -18,10 +18,139 @@ import imageio
 from matplotlib.colors import LinearSegmentedColormap
 import os
 
+
+def plot_singular_values_of_weightmatrix(model, log_scale = True, title=''):
+    """
+    For each Linear layer in the model, compute the singular values using torch.svd,
+    and plot them by layer index (x-axis) vs. singular value (y-axis).
+    This version ensures all singular values are visible and x-ticks align with integer layer indices.
+    """
+    linear_layers = [module for module in model.modules() if isinstance(module, nn.Linear)]
+
+    all_singular_values = []
+    max_sv = float('-inf')
+    min_sv = float('inf')
+
+    for i, layer in enumerate(linear_layers):
+        W = layer.weight.detach().cpu()
+        try:
+            _, S, _ = torch.svd(W)
+            sv_numpy = S.numpy()
+            all_singular_values.append((i, sv_numpy))
+            max_sv = max(max_sv, sv_numpy.max())
+            min_sv = min(min_sv, sv_numpy.min())
+        except RuntimeError:
+            print(f"⚠️ torch.svd failed on Layer {i+1} — possibly due to singularity.")
+            all_singular_values.append((i, []))
+
+    # Plot each singular value as a separate point per layer
+    plt.figure()
+    for layer_idx, svals in all_singular_values:
+        for sv in svals:
+            plt.scatter(layer_idx, sv, color='blue', alpha=0.4)
+
+    plt.title("SVs: " + title)
+    plt.xlabel("Layer Index")
+    plt.ylabel("Singular Value (log scale)")
+    if log_scale:
+        plt.yscale("log")
+
+    # Ensure y-axis covers all singular values
+    y_max = max_sv * 1.2
+    plt.ylim([1e-4, y_max])
+
+    # Use integer x-ticks only for layer indices
+    layer_indices = list(range(len(linear_layers)))
+    plt.xticks(layer_indices)
+
+    plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+    plt.tight_layout()
+    plt.show()
+
+
+def psi_manual(x, func):
+    """
+    x: a tensor of shape (2,) representing a point in R^2.
+    model: a function mapping R^2 to R^output_dim.
+    
+    Returns:
+      The smallest singular value of the Jacobian of model at x.
+    """
+    # Ensure x is a leaf variable with gradient tracking enabled.
+    x = x.clone().detach().requires_grad_(True)  
+    # print(f"x shape: {x.shape}")  # Debugging line to check the shape of x
+    
+    
+    # Compute the Jacobian using torch.autograd.functional.jacobian (compatible with Python 3.8)
+    jacobian = torch.autograd.functional.jacobian(func, x, create_graph=True)
+    # print(f"Jacobian shape: {jacobian.shape}")  # Debugging line to check the shape of the Jacobian
+    jacobian = jacobian  # Remove the artificial batch dimension
+    # print(f"Jacobian shape after squeeze: {jacobian.shape}")  # Debugging line to check the shape after squeeze
+    # Compute singular values using svdvals (available in PyTorch 1.8, compatible with Python 3.8)
+    singular_values = torch.svd(jacobian, compute_uv=False)[1] #svd interprets here the jacobian as a SQUARE matrix of the largest dimension, hence it 
+    
+   
+    return singular_values.detach().numpy()
+  
+
+def model_to_func(model,from_layer=0, to_layer=-1):
+  
+  if from_layer == 0 and to_layer == -1: # this is the case for input to last hidden layer (without output layer)
+    func = lambda inp: model(inp.unsqueeze(0), output_layer = False).squeeze(0)  # Add artificial batch dimension which is needed because of batch normalization layer BatchNorm1d and remove it again from the model output.
+  else: 
+    func = lambda inp: model.sub_model(inp.unsqueeze(0), from_layer=from_layer, to_layer = to_layer).squeeze(0)
+  
+  return func
+  
+
+def sv_plot(func, sv_index = 0, x_range = [-1,1], y_range = [-1,1], grid_size = 100, ax = None, title = ''):
+  x_values = np.linspace(x_range[0], x_range[1], grid_size)
+  y_values = np.linspace(y_range[0], y_range[1], grid_size)
+  psi_values = np.zeros((grid_size, grid_size, 2))
+  
+  # Evaluate psi(x) over the grid.
+  for i, xv in enumerate(x_values):
+      for j, yv in enumerate(y_values):
+          # Create a 2D point as a torch tensor.
+          x_point = torch.tensor([xv, yv], dtype=torch.float32)
+          psi_values[j, i,:] = psi_manual(x_point, func) #one subtlety here: if there is only one SV it gets broadcast to all dimensions of psi_values[j,i,:] in the last dimension. this reduces if statements for e.g. the last layer, but we need to notice that the SINGLE SV gets plotted twice  
+   
+
+  # Here we plot the contour at a small level, e.g., 0.01.
+  # CS = plt.contour(x_range, y_range, psi_values, levels=[0,0.05,0.1,0.2,0.3], colors='red')
+
+  # Define the number of levels for the contour plot
+  vmin1, vmax1 = psi_values[:, :, sv_index].min(), psi_values[:, :, sv_index].max()
+  num_levels = 200
+
+  levels = np.linspace(0, vmax1, num_levels)
+  
+  # Plot on the provided axis
+  if ax is not None:
+      cs = ax.contourf(x_values, y_values, psi_values[:, :, sv_index], levels=levels, cmap='viridis')
+      ax.set_title(title)
+      ax.set_xlabel('x1')
+      ax.set_ylabel('x2')
+      ax.set_aspect('equal')
+      return cs
+  else:
+    # Create the contour plot using the 'binary' colormap
+    plt.figure(figsize=(8, 6))
+    
+    CS = plt.contourf(x_values, y_values, psi_values[:,:,sv_index], levels=levels, cmap = 'viridis')
+    cbar = plt.colorbar(CS)
+    plt.title(f'Singular value no.{sv_index} of Jacobian \nwith output layer')
+    plt.xlabel('x1')
+    plt.ylabel('x2')
+    plt.show()
+
+
 #this is the new function more distilled from the old one
 
 def plot_level_sets(model, title="Prediction Level Sets", amount_levels=50, x_min = -1, x_max = 1, y_min = -1, y_max = 1, ax=None, show=True, file_name = None, footnote = None):
-    from matplotlib.colors import LinearSegmentedColormap, to_rgb
+    """
+    Plots just the contour lines of the model's predictions
+    """
 
     
     model.eval()

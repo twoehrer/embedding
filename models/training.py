@@ -1021,3 +1021,79 @@ def make_circles_uniform(output_dim, n_samples = 2000, inner_radius = 0.5, buffe
     test_dataloader = DataLoader(test_dataset, batch_size=n_samples, shuffle=False)
         
     return train_dataloader, test_dataloader
+
+def make_xor(output_dim, n_samples = 2000, noise = 0.2, cross_entropy = False, plot = True, batch_size = 128, filename = None):
+    """Generates xor
+    """
+    # Generate training data
+    # set random seed for reproducibility
+    seed = np.random.randint(1000)
+    print(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    
+    
+    data = torch.randint(low=0, high=2, size=(n_samples, 2), dtype=torch.float32)
+    labels = np.logical_xor(data[:, 0] > 0, data[:, 1] > 0).float()
+    data += noise * torch.randn(data.shape) - 0.5
+    # Generate outer ring points
+    
+    X_train, X_test, y_train, y_test = train_test_split(data, labels, test_size=.2)
+    print(X_train[:5,:])
+    print(y_train[:5])
+    
+    if plot:
+        # Plot the data
+        
+        data_0 = X_train[y_train[:] == 0]
+        data_1 = X_train[y_train[:] == 1]
+        plt.figure(figsize=(8, 8))
+        plt.scatter(data_0[:, 0], data_0[:, 1], s=20, c='C1', alpha = 0.5, label='Ring Points')
+        plt.scatter(data_1[:, 0], data_1[:, 1], s=20, c='C0', alpha = 0.5, label='Inside Points')
+        plt.xlabel('X')
+        plt.ylabel('Y')
+        # plt.legend()
+        plt.title('Training Dataset: Ring and Inside Points')
+        plt.axis('equal')
+        plt.grid(True)
+        
+                # Save plot if filename provided
+        if filename is not None:
+            plt.savefig(f'{filename}.png', bbox_inches='tight', dpi=300)
+            print(f'Plot saved as {filename}.png')
+        
+        plt.show()
+    
+
+    # Convert to tensors
+    data_tensor = torch.tensor(data, dtype=torch.float32)
+
+    if cross_entropy:
+        labels_tensor = torch.tensor(labels, dtype=torch.long)
+        print(labels_tensor[:1])
+    else:
+        labels_tensor = torch.tensor(labels, dtype=torch.float32)
+    
+
+
+    X_train = torch.tensor(X_train, dtype=torch.float32)
+    X_test = torch.tensor(X_test, dtype=torch.float32)
+    
+    if output_dim == 1:
+        y_train = torch.tensor(y_train.reshape(-1, 1), dtype=torch.float32)
+        y_test = torch.tensor(y_test.reshape(-1, 1), dtype=torch.float32)
+    else:
+        y_train = torch.tensor(y_train, dtype=torch.float32)  # Don't reshape for 2D outputs
+        y_test = torch.tensor(y_test, dtype=torch.float32)
+
+    # Create DataLoader for training data
+    train_dataset = TensorDataset(X_train, y_train)
+    test_dataset = TensorDataset(X_test, y_test)
+
+    # Create DataLoader for training data
+    train_dataset = TensorDataset(X_train, y_train)
+    test_dataset = TensorDataset(X_test, y_test)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_dataloader = DataLoader(test_dataset, batch_size=n_samples, shuffle=False)
+        
+    return train_dataloader, test_dataloader
