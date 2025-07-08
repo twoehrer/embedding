@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-@author: borjangeshkovski (adapted from https://github.com/EmilienDupont/augmented-neural-odes)
-"""
+
 import json
 import torch.nn as nn
 import numpy as np
@@ -40,7 +38,7 @@ def compute_accuracy(y_pred, y_true):
 import copy
 
 def train_model(model, train_loader, test_loader,
-                                load_file = None, epochs=300, lr=0.01, patience=300, cross_entropy=True, seed = None):
+                                load_file = None, epochs=300, lr=0.01, early_stopping = True, patience=300, cross_entropy=True, seed = None):
     """
     Trains the model on the provided training data and evaluates it on the test data.
     patience is the number of epochs to wait for improvement before stopping training.
@@ -73,28 +71,28 @@ def train_model(model, train_loader, test_loader,
                 optimizer.step()
 
             losses.append(epoch_loss / len(train_loader))
+            if early_stopping:
+                # Evaluate on test data
+                model.eval()
+                with torch.no_grad():
+                    acc_summed = 0.
+                    counter = 0
+                    for X_test, y_test in test_loader:
+                        counter += 1
+                        test_preds = model(X_test)
+                        acc_summed += compute_accuracy(test_preds, y_test)
+                    acc = acc_summed / counter
+                model.train()
 
-            # Evaluate on test data
-            model.eval()
-            with torch.no_grad():
-                acc_summed = 0.
-                counter = 0
-                for X_test, y_test in test_loader:
-                    counter += 1
-                    test_preds = model(X_test)
-                    acc_summed += compute_accuracy(test_preds, y_test)
-                acc = acc_summed / counter
-            model.train()
-
-            if acc > best_acc:
-                best_acc = acc
-                best_model_state = copy.deepcopy(model.state_dict())
-                patience_counter = 0
-            else:
-                patience_counter += 1
-                if patience_counter >= patience:
-                    print(f"⏹️ Early stopping at epoch {epoch}, best acc: {best_acc:.3f}")
-                    break
+                if acc > best_acc:
+                    best_acc = acc
+                    best_model_state = copy.deepcopy(model.state_dict())
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                    if patience_counter >= patience:
+                        print(f"⏹️ Early stopping at epoch {epoch}, best acc: {best_acc:.3f}")
+                        break
 
             # At end, load the best model
         if patience_counter > 0:
@@ -989,7 +987,7 @@ def make_circles_uniform(output_dim, n_samples = 2000, inner_radius = 0.5, buffe
         plt.xlabel('$x_1$')
         plt.ylabel('$x_2$')
         # plt.legend()
-        plt.title('Training Dataset: Ring and Inside Points')
+        plt.title('Training Dataset: Ring and Inside Circle')
         plt.axis('equal')
         plt.grid(True)
         
@@ -1066,7 +1064,7 @@ def make_xor(output_dim, n_samples = 2000, noise = 0.2, cross_entropy = False, p
     
 
     # Convert to tensors
-    data_tensor = torch.tensor(data, dtype=torch.float32)
+    # data_tensor = torch.tensor(data, dtype=torch.float32)
 
     if cross_entropy:
         labels_tensor = torch.tensor(labels, dtype=torch.long)
