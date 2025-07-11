@@ -22,18 +22,22 @@ from torch.utils.data import DataLoader, TensorDataset
 
 
 
-def compute_accuracy(y_pred, y_true):
+def compute_accuracy(y_pred, y_true, type='class'):
     """
     computes accuracy of predictions against ground truth labels.
     only works for 1-dim output currently
-    y_pred: float32 predictions (sigmoid outputs)
-    y_true: float32 ground truth labels (0 or 1)
+    If cross_entropy is True, it assumes binary classification and thresholds predictions at 0.5.
+    type can be 'class' for classification or 'reg' for regression tasks.
     """
-    y_pred_binary = (y_pred >= 0.5).int()
-    y_true_binary = y_true.int()
-    correct = (y_pred_binary == y_true_binary).sum().item()
-    total = y_true.shape[0]
-    return correct / total
+    if type == 'class':
+        y_pred_binary = (y_pred >= 0.5).int()
+        y_true_binary = y_true.int()
+        correct = (y_pred_binary == y_true_binary).sum().item()
+        total = y_true.shape[0]
+        return correct / total
+    if type == 'reg':
+        mse = torch.mean((y_pred - y_true) ** 2).item()
+        return torch.max(1.0 - mse, 0.0)
 
 import copy
 
@@ -71,6 +75,8 @@ def train_model(model, train_loader, test_loader,
                 optimizer.step()
 
             losses.append(epoch_loss / len(train_loader))
+            
+            #here starts early stopping
             if early_stopping:
                 # Evaluate on test data
                 model.eval()
@@ -80,7 +86,7 @@ def train_model(model, train_loader, test_loader,
                     for X_test, y_test in test_loader:
                         counter += 1
                         test_preds = model(X_test)
-                        acc_summed += compute_accuracy(test_preds, y_test)
+                        acc_summed += compute_accuracy(test_preds, y_test, type = 'reg' if not cross_entropy else 'class')
                     acc = acc_summed / counter
                 model.train()
 
@@ -94,9 +100,9 @@ def train_model(model, train_loader, test_loader,
                         print(f"⏹️ Early stopping at epoch {epoch}, best acc: {best_acc:.3f}")
                         break
 
-            # At end, load the best model
-        if patience_counter > 0:
-            model.load_state_dict(best_model_state)
+                    # At end, load the best model
+                if patience_counter > 0:
+                    model.load_state_dict(best_model_state)
             
         # --- Save Checkpoint ---
         checkpoint = {
@@ -170,14 +176,14 @@ def train_model(model, train_loader, test_loader,
 
 
 def train_until_threshold(model_class, train_loader, test_loader, 
-                          load_file = None, cross_entropy=True,max_retries=10, threshold=0.95, seed = None, **model_kwargs):
+                          load_file = None, cross_entropy=True,max_retries=10, threshold=0.95, early_stopping = True, seed = None, **model_kwargs):
     if load_file is None:
         for attempt in range(1, max_retries + 1):
             seed = np.random.randint(1000)
             np.random.seed(seed)
             torch.manual_seed(seed)
             model = model_class(**model_kwargs)
-            model, acc, losses = train_model(model, train_loader, test_loader, cross_entropy=cross_entropy)
+            model, acc, losses = train_model(model, train_loader, test_loader, cross_entropy= cross_entropy, early_stopping = early_stopping)
             print(f"[Attempt {attempt}] Accuracy: {acc:.3f}")
             if acc >= threshold:
                 print(f"✅ Success after {attempt} attempt(s)!")
@@ -195,7 +201,7 @@ def plot_loss_curve(losses, title="Training Loss", filename = None):
     plt.figure(figsize=(6, 4))
     plt.plot(losses, label="Loss")
     plt.xlabel("Epoch")
-    plt.ylabel("Binary Cross Entropy Loss")
+    plt.ylabel("Loss")
     plt.title(title)
     plt.grid(True)
     plt.legend()
