@@ -121,7 +121,7 @@ def train_model(model, train_loader, test_loader,
         }
         save_path = f'last.pth'
         torch.save(checkpoint, save_path)
-        print(f'Checkpoint saved to {save_path}')
+        # print(f'Checkpoint saved to {save_path}')
         # We have the losses from training directly
 
         return model, best_acc, losses  # <--- return the best model!

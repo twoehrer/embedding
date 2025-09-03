@@ -159,6 +159,11 @@ def psi_manual(x, func, output_type = 'sv'):
             moduli = torch.norm(eigs, dim = 1)
             sorted_indices = torch.argsort(moduli, descending=True ) #descending order to match singular values behavior
             output = moduli[sorted_indices]
+    elif output_type == 'eigvals_1d':
+            eigs = jacobian
+            output = eigs
+        
+    
     else:
         raise ValueError("output_type must be either 'sv' or 'eigmods'")
              
