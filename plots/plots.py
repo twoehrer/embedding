@@ -226,14 +226,14 @@ def sv_plot(func, v_index = 0, x_range = [-1,1], y_range = [-1,1], grid_size = 1
 
 #this is the new function more distilled from the old one
 
-def plot_level_sets(model, title="Prediction Level Sets", amount_levels=50, x_min = -1, x_max = 1, y_min = -1, y_max = 1, ax=None, show=True, file_name = None, footnote = None):
+def plot_level_sets(model, title="Prediction Level Sets", amount_levels=50, plotrange = [-2,2], ax=None, show=True, file_name = None, footnote = None):
     """
     Plots just the contour lines of the model's predictions
     """
-
+    plot_min, plot_max = plotrange[0], plotrange[1]
     
     model.eval()
-    xx, yy = np.meshgrid(np.linspace(x_min, x_max, 200), np.linspace(y_min, y_max, 200))
+    xx, yy = np.meshgrid(np.linspace(plot_min, plot_max, 200), np.linspace(plot_min, plot_max, 200))
     grid = np.c_[xx.ravel(), yy.ravel()]
     grid_tensor = torch.tensor(grid, dtype=torch.float32)
 
@@ -253,10 +253,10 @@ def plot_level_sets(model, title="Prediction Level Sets", amount_levels=50, x_mi
     ax.set_title(title)
     ax.set_xlabel('$x_1$')
     ax.set_ylabel('$x_2$')
-    ax.set_xlim(-1, 1)
-    ax.set_ylim(-1, 1)
-    ax.set_xticks([-1.0, -0.5, 0.0, 0.5, 1.0])
-    ax.set_yticks([-1.0, -0.5, 0.0, 0.5, 1.0])
+    # ax.set_xlim(-1, 1)
+    # ax.set_ylim(-1, 1)
+    # ax.set_xticks([-1.0, -0.5, 0.0, 0.5, 1.0])
+    # ax.set_yticks([-1.0, -0.5, 0.0, 0.5, 1.0])
     ax.axis('tight')
     ax.grid(False)
 
@@ -323,6 +323,7 @@ def plot_decision_boundary(model, X, y, title="Prediction Level Sets", amount_le
         print(f"Plot saved to {file_name}")
     if show and ax is None:
         plt.show()
+    
         
 
 
@@ -410,7 +411,7 @@ def visualize_classification(model, data, label, grad = None, fig_name=None, foo
 
 
 @torch.no_grad()
-def classification_levelsets(model, fig_name=None, footnote=None, contour = True, amount_levels = 8, plotlim = [-2, 2]):
+def classification_levelsets(model, fig_name=None, footnote=None, contour = True, plotlim = [-2, 2], alpha = 1, num_levels = 8):
     
     
     x1lower, x1upper = plotlim
@@ -418,11 +419,10 @@ def classification_levelsets(model, fig_name=None, footnote=None, contour = True
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    fig = plt.figure(figsize=(5, 5), dpi=100)
+    fig = plt.figure()
     
     plt.ylabel(r"$x_2$")
     plt.xlabel(r"$x_1$")
-    plt.figtext(0.5, 0, footnote, ha="center", fontsize=10)
 
     
    
@@ -430,19 +430,43 @@ def classification_levelsets(model, fig_name=None, footnote=None, contour = True
 
     x1 = torch.arange(x1lower, x1upper, step=0.01, device=device)
     x2 = torch.arange(x2lower, x2upper, step=0.01, device=device)
-    xx1, xx2 = torch.meshgrid(x1, x2)  # Meshgrid function as in numpy
+    xx1, xx2  = torch.meshgrid(x1, x2)  # Meshgrid function as in numpy should emulate indexing='xy'
     model_inputs = torch.stack([xx1, xx2], dim=-1)
     
     preds, _ = model(model_inputs)
+    print('shape preds', preds.shape)
+    if model.output_dim == 1 and model.cross_entropy == False:
+        Z = preds.squeeze()  # normalizes the model predictions to probabilities
+        Z = torch.clamp((Z + 1)/2, 0.0, 1.0) #normalizes the output trained with MSE to probabilities between 0 and 1
+        print('shape Z', Z.shape)
+    elif model.output_dim == 2 and model.cross_entropy == False:
+        Z = preds.squeeze() 
+        Z = preds[..., 1]
+        print('shape preds', preds.shape)
+        Z = 1 - torch.clamp((Z + 1)/2, 0.0, 1.0) #normalizes the output trained with MSE to probabilities between 0 and 1
+    elif model.output_dim == 1 and model.cross_entropy == True:
+        Z = preds.sigmoid()
+        Z = Z.squeeze()
+        print('shape Z', Z.shape)
+        
+    else:
+        Z = preds.softmax(dim=-1)[..., 0]    # (len_x2, len_x1) THIS NEEDS FIXING IF NOT CE! RESSCALING
+        print('shape Z', Z.shape)
+
+# Convert for matplotlib
+    X = xx1.detach().cpu().numpy()
+    Y = xx2.detach().cpu().numpy()
+    Z = Z.detach().cpu().numpy()
     
-    # dim = 2 means that it normalizes along the last dimension, i.e. along the two predictions that are the model output
-    m = nn.Softmax(dim=2)
-    # softmax normalizes the model predictions to probabilities
-    preds = m(preds)
+    print('shape check:',X.shape == Y.shape == Z.shape)
+    
+    # # dim = 2 means that it normalizes along the last dimension, i.e. along the two predictions that are the model output
+    # m = nn.Softmax(dim=2)
+    # # softmax normalizes the model predictions to probabilities
+    # preds = m(preds)
 
     #we only need the probability for being in class1 (as prob for class2 is then 1- class1)
-    preds = preds[:, :, 0]
-    preds = preds.unsqueeze(2)  # adds a tensor dimension at position 2
+   
     
     plt.grid(False)
     plt.xlim([x1lower, x1upper])
@@ -455,22 +479,24 @@ def classification_levelsets(model, fig_name=None, footnote=None, contour = True
         colors = [to_rgb("C1"), [1, 1, 1], to_rgb("C0")] # first color is orange, last is blue
         cm = LinearSegmentedColormap.from_list(
             "Custom", colors, N=40)
-        z = np.array(preds).reshape(xx1.shape)
+       
         
-        levels = np.linspace(0.,1.,amount_levels).tolist()
+        levels = np.linspace(0.,1.,num_levels).tolist()
         
-        cont = plt.contourf(xx1, xx2, z, levels, alpha=1, cmap=cm, zorder = 0, extent=(x1lower, x1upper, x2lower, x2upper)) #plt.get_cmap('coolwarm')
-        cbar = fig.colorbar(cont, fraction=0.046, pad=0.04)
-        cbar.ax.set_ylabel('prediction prob.')
+        cont = plt.contourf(X, Y, Z, levels, alpha=alpha, cmap=cm, zorder = 0) #plt.get_cmap('coolwarm')
+        cbar = fig.colorbar(cont) #, fraction=0.046, pad=0.04
+        cbar.ax.set_ylabel('prediction prob.', fontsize = 11)
+        
+    
+        
+    plt.figtext(0.5, -0.02, footnote, ha="center", fontsize = 6)
     
 
     if fig_name:
         plt.savefig(fig_name + '.png', bbox_inches='tight', dpi=300, format='png', facecolor = 'white')
         plt.clf()
         plt.close()
-    # else: plt.show()
-    else:
-        return fig, ax
+    else: plt.show()
     
 def loss_evolution(trainer, epoch, filename = '', figsize = None, footnote = None):
     print(f'{epoch = }')

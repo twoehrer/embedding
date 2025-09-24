@@ -77,19 +77,21 @@ def train_model(model, train_loader, test_loader,
             losses.append(epoch_loss / len(train_loader))
             
             #here starts early stopping
+            
+            # Evaluate on test data
+            model.eval()
+            with torch.no_grad():
+                acc_summed = 0.
+                counter = 0
+                for X_test, y_test in test_loader:
+                    counter += 1
+                    test_preds = model(X_test)
+                    acc_summed += compute_accuracy(test_preds, y_test, type = 'reg' if not cross_entropy else 'class')
+                acc = acc_summed / counter
+            model.train()
+            
             if early_stopping:
-                # Evaluate on test data
-                model.eval()
-                with torch.no_grad():
-                    acc_summed = 0.
-                    counter = 0
-                    for X_test, y_test in test_loader:
-                        counter += 1
-                        test_preds = model(X_test)
-                        acc_summed += compute_accuracy(test_preds, y_test, type = 'reg' if not cross_entropy else 'class')
-                    acc = acc_summed / counter
-                model.train()
-
+                
                 if acc > best_acc:
                     best_acc = acc
                     best_model_state = copy.deepcopy(model.state_dict())
@@ -103,6 +105,7 @@ def train_model(model, train_loader, test_loader,
                     # At end, load the best model
                 if patience_counter > 0:
                     model.load_state_dict(best_model_state)
+            else: best_acc = acc #if no early stopping, just return the last accuracy
             
         # --- Save Checkpoint ---
         checkpoint = {
@@ -176,14 +179,14 @@ def train_model(model, train_loader, test_loader,
 
 
 def train_until_threshold(model_class, train_loader, test_loader, 
-                          load_file = None, cross_entropy=True,max_retries=10, threshold=0.95, early_stopping = True, seed = None, **model_kwargs):
+                          load_file = None, cross_entropy=True, epochs = 300, max_retries=10, threshold=0.95, early_stopping = True, seed = None, **model_kwargs):
     if load_file is None:
         for attempt in range(1, max_retries + 1):
             seed = np.random.randint(1000)
             np.random.seed(seed)
             torch.manual_seed(seed)
             model = model_class(**model_kwargs)
-            model, acc, losses = train_model(model, train_loader, test_loader, cross_entropy= cross_entropy, early_stopping = early_stopping)
+            model, acc, losses = train_model(model, train_loader, test_loader, cross_entropy= cross_entropy, epochs = epochs, early_stopping = early_stopping)
             print(f"[Attempt {attempt}] Accuracy: {acc:.3f}")
             if acc >= threshold:
                 print(f"✅ Success after {attempt} attempt(s)!")
@@ -380,13 +383,13 @@ class doublebackTrainer():
     """
     def __init__(self, model, optimizer, device, cross_entropy=True,
                  print_freq=10, record_freq=10, verbose=True, save_dir=None, 
-                 turnpike=True, bound=0., fixed_projector=False, eps = 0.01, l2_factor = 0, eps_comp = 0., db_type = 'l1'):
+                 turnpike=True, bound=0., fixed_projector=False, eps = 0., l2_factor = 0, eps_comp = 0., db_type = 'l1'):
         self.model = model
         self.optimizer = optimizer
         self.cross_entropy = cross_entropy
         self.device = device
         if cross_entropy:
-            self.loss_func = losses['cross_entropy']
+            self.loss_func = nn.BCEWithLogitsLoss()
         else:
             # self.loss_func = losses['mse']
             self.loss_func = nn.MSELoss()
@@ -494,10 +497,9 @@ class doublebackTrainer():
             if self.cross_entropy:
                 epoch_loss += loss.item()
                 epoch_loss_rob += loss_rob.item() 
-                m = nn.Softmax(dim = 1)
                 # print(y_pred.size())
-                softpred = m(y_pred)
-                softpred = torch.argmax(softpred, 1)  
+                softpred = torch.sigmoid(y_pred)
+                softpred = (softpred >= 0.5).float()
                 epoch_acc += (softpred == y_batch).sum().item()/(y_batch.size(0))       
             else:
                 epoch_loss += loss.item()
@@ -904,6 +906,9 @@ def make_circles_uniform(output_dim, n_samples = 2000, inner_radius = 0.5, buffe
         cross_entropy (bool): If True, use cross-entropy loss. If False, use MSE loss.
         output_dim (int): Dimension of the output labels. MSE allows 2d
     """
+    from sklearn.preprocessing import StandardScaler
+    
+    
     # Generate training data
     # set random seed for reproducibility
     if seed is None:
@@ -965,6 +970,7 @@ def make_circles_uniform(output_dim, n_samples = 2000, inner_radius = 0.5, buffe
         labels = np.vstack((labels_ring, labels_inside))
     
     
+    data = StandardScaler().fit_transform(data)
     
     # Create DataLoader
     X_train, X_test, y_train, y_test = train_test_split(data, labels, test_size=0.3, random_state=seed)

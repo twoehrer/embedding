@@ -4,6 +4,38 @@ import torch.nn.functional as F
 import numpy as np
 
 
+class DiagonalLinear(nn.Module):
+    def __init__(self, in_features, out_features, fixed_w00 = None):
+        super().__init__()
+        self.dim = min(in_features, out_features)
+        self.out_features = out_features
+        if fixed_w00 is None:
+            self.weight = nn.Parameter(torch.ones(self.dim))
+            self.fixed = None
+        else:
+            # first weight fixed (buffer), others trainable
+            self.register_buffer("fixed", torch.tensor([float(fixed_w00)]))  # shape [1]
+            self.weight_rest = nn.Parameter(torch.ones(max(self.dim - 1, 0)))
+                                
+        self.bias = nn.Parameter(torch.zeros(out_features))
+        
+        
+        
+    def _weight_vec(self, x):
+        # build [w00_fixed, w2, ..., w_dim] on the fly (correct device/dtype)
+        if self.fixed is None:
+            return self.weight
+        return torch.cat((self.fixed.to(x.device, x.dtype), self.weight_rest), dim=0)
+
+    def forward(self, x):
+        w = self._weight_vec(x)                   # length = self.dim
+        out = x[..., :self.dim] * w               # diagonal scaling
+        pad = self.out_features - out.shape[-1]   # pad to out_features if needed
+        if pad > 0:
+            out = F.pad(out, (0, pad))
+        return out + self.bias
+
+
 class ResidualBlock(nn.Module):
     """
     Residual Block that includes a batch normalization layer and a skip connection with adjustable skip parameter. 
@@ -15,6 +47,12 @@ class ResidualBlock(nn.Module):
 
         super(ResidualBlock, self).__init__()
         self.fc = nn.Linear(features, features)
+        
+        # --- Xavier initialization (good for tanh, id; works ok for relu if you prefer simpler setup)
+        nn.init.xavier_normal_(self.fc.weight)
+        if self.fc.bias is not None:
+            nn.init.zeros_(self.fc.bias)
+        
         if batchnorm: #batchnorm is helpful to stabilize the training for deeper networks
             self.bn = nn.BatchNorm1d(features)
             
@@ -36,7 +74,7 @@ class ResidualBlock(nn.Module):
         return out
 
 class ResNet(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, num_hidden, skip_param = 1,  sara_param = 1, activation = 'relu', final_sigmoid = True, batchnorm = True, input_layer = True):
+    def __init__(self, input_dim, hidden_dim, output_dim, num_hidden, skip_param = 1,  sara_param = 1, activation = 'relu', final_sigmoid = True, batchnorm = True, input_layer = True, input_layer_diagonal = False, fixed_w00 = None):
         
         super(ResNet, self).__init__()
         self.num_hidden = num_hidden
@@ -46,6 +84,7 @@ class ResNet(nn.Module):
         self.skip_param = skip_param
         self.sara_param = sara_param
         self.input_layer_exists = input_layer
+        self.input_layer_diagonal = input_layer_diagonal
         if activation == 'relu':
             self.activation = nn.ReLU()
         if activation == 'tanh':
@@ -55,11 +94,17 @@ class ResNet(nn.Module):
         self.final_sigmoid = final_sigmoid
             
         if self.input_layer_exists: #if i stay in the dimension of the input i do not need an input layer, so this is optional for e.g. the 1d to 1d example
-            self.input_fc = nn.Linear(input_dim, hidden_dim)
+            if self.input_layer_diagonal:
+                self.input_fc = DiagonalLinear(self.input_dim, self.hidden_dim, fixed_w00 = fixed_w00)
+            else:
+                self.input_fc = nn.Linear(input_dim, hidden_dim)
+                
             self.input_layer = nn.Sequential(
                 self.input_fc,
                 self.activation
             )
+            
+        
         self.res_blocks = nn.Sequential(
             *[ResidualBlock(hidden_dim, skip_param=skip_param, sara_param = sara_param, activation = activation, batchnorm=batchnorm) for _ in range(num_hidden)]
         )
