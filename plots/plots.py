@@ -22,6 +22,42 @@ import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 
+
+def plot_weightmatrix(model, title='', ax=None):
+    """
+    For each Linear layer in the model, compute the eigenvalues of the weight matrix,
+    take their modulus, and plot them by layer index (x-axis) vs. modulus (y-axis).
+    """
+    from matplotlib.colors import TwoSlopeNorm
+    linear_layers = [module for module in model.modules() if isinstance(module, nn.Linear)]
+
+
+    for i, layer in enumerate(linear_layers):
+        W = layer.weight.detach().cpu().numpy()
+        # Normalize so that 0 is at the center (white)
+        
+        val_min, val_max = min(-1, W.min()), max(1, W.max()) #want always to be able to center the scale at 0
+        # val_min, val_max = 
+    
+        
+   
+        norm = TwoSlopeNorm(vmin=val_min, vcenter=0, vmax=val_max)
+        plt.imshow(W, cmap="seismic", norm=norm, origin="upper")
+            
+
+        plt.colorbar(label="Value")
+
+        # Matrix indices
+        plt.xticks([0, 1], ["1", "2"])  # columns j
+        plt.yticks([0, 1], ["1", "2"])  # rows i
+        plt.xlabel("j")
+        plt.ylabel("i")
+        plt.title( str(i) + "th layer")
+
+        plt.show()
+    
+    
+    
 def plot_EVmod_of_weightmatrix(model, log_scale=True, title='', ax=None):
     """
     For each Linear layer in the model, compute the eigenvalues of the weight matrix,
@@ -170,19 +206,24 @@ def psi_manual(x, func, output_type = 'sv'):
     return output.detach().numpy()
   
 
-def model_to_func(model,from_layer=0, to_layer=-1):
+def model_to_func(model,from_layer=0, to_layer=-1, output_layer = False):
   
   if from_layer == 0 and to_layer == -1: # this is the case for input to last hidden layer (without output layer)
-    func = lambda inp: model(inp.unsqueeze(0), output_layer = False).squeeze(0)  # Add artificial batch dimension which is needed because of batch normalization layer BatchNorm1d and remove it again from the model output.
+    func = lambda inp: model(inp.unsqueeze(0), output_layer = output_layer).squeeze(0)  # Add artificial batch dimension which is needed because of batch normalization layer BatchNorm1d and remove it again from the model output.
   else: 
     func = lambda inp: model.sub_model(inp.unsqueeze(0), from_layer=from_layer, to_layer = to_layer).squeeze(0)
   
   return func
+
+def model_to_func_incl_output_layer(model,from_layer=0, to_layer=-1, output_layer = True):
+    func = lambda x: model.sub_model_finlayer(x, from_layer=from_layer, to_layer=to_layer, output_layer = output_layer)  
+  
+    return func
   
 '''
 output_type: 'sv' for singular values, 'eigmods' for eigenvalue moduli
 '''
-def sv_plot(func, v_index = 0, x_range = [-1,1], y_range = [-1,1], grid_size = 100, ax = None, title = '', output_type = 'sv'):
+def sv_plot(func, v_index = 0, x_range = [-1,1], y_range = [-1,1], grid_size = 100, ax = None, title = '', output_type = 'sv', vmax = None, plot_levels = 200):
   x_values = np.linspace(x_range[0], x_range[1], grid_size)
   y_values = np.linspace(y_range[0], y_range[1], grid_size)
   psi_values = np.zeros((grid_size, grid_size, 2))
@@ -199,8 +240,10 @@ def sv_plot(func, v_index = 0, x_range = [-1,1], y_range = [-1,1], grid_size = 1
   # CS = plt.contour(x_range, y_range, psi_values, levels=[0,0.05,0.1,0.2,0.3], colors='red')
 
   # Define the number of levels for the contour plot
-  vmin1, vmax1 = psi_values[:, :, v_index].min(), psi_values[:, :, v_index].max()
-  num_levels = 200
+  if vmax is None:
+    vmin1, vmax1 = psi_values[:, :, v_index].min(), psi_values[:, :, v_index].max()
+  else: vmax1 = vmax  
+  num_levels = plot_levels
 
   levels = np.linspace(0, vmax1, num_levels)
   
@@ -226,14 +269,15 @@ def sv_plot(func, v_index = 0, x_range = [-1,1], y_range = [-1,1], grid_size = 1
 
 #this is the new function more distilled from the old one
 
-def plot_level_sets(model, title="Prediction Level Sets", amount_levels=50, plotrange = [-2,2], ax=None, show=True, file_name = None, footnote = None):
+def plot_level_sets(model, title="Prediction Level Sets", amount_levels=50, plotrange = [-2.5,2.5], grid_size = 200, ax=None, show=True, file_name = None, footnote = None):
     """
     Plots just the contour lines of the model's predictions
     """
     plot_min, plot_max = plotrange[0], plotrange[1]
     
+    
     model.eval()
-    xx, yy = np.meshgrid(np.linspace(plot_min, plot_max, 200), np.linspace(plot_min, plot_max, 200))
+    xx, yy = np.meshgrid(np.linspace(plot_min, plot_max, 200), np.linspace(plot_min, plot_max, grid_size))
     grid = np.c_[xx.ravel(), yy.ravel()]
     grid_tensor = torch.tensor(grid, dtype=torch.float32)
 
@@ -243,12 +287,11 @@ def plot_level_sets(model, title="Prediction Level Sets", amount_levels=50, plot
     if ax is None:
         fig, ax = plt.subplots(figsize=(6, 5))
 
-    levels = np.linspace(0., 1., amount_levels).tolist()
+    levels = np.linspace(0., 1, amount_levels).tolist()
     contour = ax.contour(xx, yy, preds, 
                           levels=levels, 
                           colors = 'k', linewidths = 0.3, alpha=1)
-    
-    
+
     
     ax.set_title(title)
     ax.set_xlabel('$x_1$')
@@ -266,6 +309,9 @@ def plot_level_sets(model, title="Prediction Level Sets", amount_levels=50, plot
     
     plt.figtext(0.5, 0, footnote, ha="center", fontsize=8)
     
+    print("xx[0,0], xx[0,-1], yy[0,0], yy[-1,0] =",
+      xx[0,0], xx[0,-1], yy[0,0], yy[-1,0])
+    
     if file_name is not None:
         file_name = file_name + '.png'
         plt.savefig(file_name, bbox_inches='tight', dpi=300, facecolor = 'white')
@@ -273,16 +319,23 @@ def plot_level_sets(model, title="Prediction Level Sets", amount_levels=50, plot
     if show and ax is None:
         plt.show()
 
-def plot_decision_boundary(model, X, y, title="Prediction Level Sets", amount_levels=50, margin=0.2, ax=None, show=True, colorbar = True, file_name = None, show_points = True, footnote = None):
+def plot_decision_boundary(model, X, y, title="Prediction Level Sets", amount_levels=50, margin=None, plotrange = [-2.5,2.5], ax=None, show=True, colorbar = True, file_name = None, show_points = True, footnote = None):
     from matplotlib.colors import LinearSegmentedColormap, to_rgb
 
     colors = [to_rgb("C0"), [1, 1, 1], to_rgb("C1")]
     cm = LinearSegmentedColormap.from_list("Custom", colors, N=amount_levels)
 
     model.eval()
-    x_min, x_max = X[:, 0].min() - margin, X[:, 0].max() + margin
-    y_min, y_max = X[:, 1].min() - margin, X[:, 1].max() + margin
+    
+    if margin is None:
+        x_min, x_max = plotrange[0], plotrange[1]
+        y_min, y_max = plotrange[0], plotrange[1]
+    else:
+        x_min, x_max = X[:, 0].min() - margin, X[:, 0].max() + margin
+        y_min, y_max = X[:, 1].min() - margin, X[:, 1].max() + margin
+        
     xx, yy = np.meshgrid(np.linspace(x_min, x_max, 200), np.linspace(y_min, y_max, 200))
+
     grid = np.c_[xx.ravel(), yy.ravel()]
     grid_tensor = torch.tensor(grid, dtype=torch.float32)
 
@@ -299,14 +352,15 @@ def plot_decision_boundary(model, X, y, title="Prediction Level Sets", amount_le
     
     
     
+    
     if show_points == True:
         scatter = ax.scatter(X[:, 0], X[:, 1], s=25, c=y.squeeze(), cmap=cm, edgecolors='black', linewidths=0.5, alpha=0.9)
 
     ax.set_title(title)
     ax.set_xlabel('$x_1$')
     ax.set_ylabel('$x_2$')
-    ax.set_xlim(-1, 1)
-    ax.set_ylim(-1, 1)
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_min, y_max)
  
     ax.axis('tight')
     ax.grid(False)
@@ -316,6 +370,9 @@ def plot_decision_boundary(model, X, y, title="Prediction Level Sets", amount_le
         cb.set_ticklabels([f"{tick:.2f}" for tick in colorbar_ticks])
     
     plt.figtext(0.5, 0, footnote, ha="center", fontsize=8)
+    
+    print("xx[0,0], xx[0,-1], yy[0,0], yy[-1,0] =",
+      xx[0,0], xx[0,-1], yy[0,0], yy[-1,0])
     
     if file_name is not None:
         file_name = file_name + '.png'

@@ -36,8 +36,10 @@ def compute_accuracy(y_pred, y_true, type='class'):
         total = y_true.shape[0]
         return correct / total
     if type == 'reg':
-        mse = torch.mean((y_pred - y_true) ** 2).item()
-        return torch.max(1.0 - mse, 0.0)
+        mse = torch.mean((y_pred - y_true) ** 2)
+        acc = 1.0 - mse
+        acc = torch.clamp(acc, min=0.0, max=1.0)  # optional
+        return acc.item()
 
 import copy
 
